@@ -1,7 +1,7 @@
 
-
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 
 recipes = {
     "BLC-310 V2": {
@@ -138,6 +138,10 @@ st.title("Livre de recette")
 product = st.selectbox("Choisir un produit à produire :", list(recipes.keys()))
 quantity = st.number_input("Quantité à produire (Litre de produit fini) :", min_value=1.0, step=1.0)
 
+data_export = []
+
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 if product and quantity:
     st.subheader("Ingrédients calculés :")
     recipe = recipes[product]
@@ -187,10 +191,21 @@ if product and quantity:
             key=f"test_{i}"
         )
 
+    assurance_qualite = "Nécessaire" if "Non conforme" in test_results.values() else "Non nécessaire"
+
     if "Non conforme" in test_results.values():
         st.warning("⚠️ Résultat non conforme détecté. Mettre le produit en audit pour vérification qualité.")
 
     if st.button("Exporter les données"):
         df_real.to_csv("ajustements_production.csv")
         pd.DataFrame.from_dict(test_results, orient='index', columns=["Résultat"]).to_csv("controle_qualite.csv")
-        st.success("Fichiers exportés : ajustements_production.csv et controle_qualite.csv")
+
+        historique = {
+            "Date et heure": timestamp,
+            "Produit": product,
+            "Ingrédients": ", ".join(df["Ingrédient"]),
+            "Assurance qualité": assurance_qualite
+        }
+        pd.DataFrame([historique]).to_csv("historique_production.csv", mode='a', index=False, header=False)
+
+        st.success("Fichiers exportés : ajustements_production.csv, controle_qualite.csv et historique_production.csv")
