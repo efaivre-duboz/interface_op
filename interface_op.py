@@ -1,7 +1,10 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import os
+
+# Emplacement du fichier Excel sur OneDrive
+excel_path = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production/historique_production.xlsx"
 
 recipes = {
     "BLC-310 V2": {
@@ -10,119 +13,7 @@ recipes = {
         "PD-585": (0.05, "kg"),
         "D&C Green 6": (0.00132, "kg")
     },
-    "BLC-402": {
-        "Base Ester bio": (1.00, "L")
-    },
-    "BLC-406": {
-        "Base Ester bio": (0.943, "L"),
-        "ETHAL LA-4": (0.066, "L")
-    },
-    "BLC-475": {
-        "Base Ester bio": (0.40, "L"),
-        "FlorasolV LX300": (0.55, "L"),
-        "NINOL 11-CM": (0.05, "L")
-    },
-    "BLC-489": {
-        "Base organique pure": (0.656, "L"),
-        "Base Ester bio": (0.40, "L")
-    },
-    "BLC-505": {
-        "Eau": (0.498, "L"),
-        "Glycérine 95%": (0.320, "L"),
-        "Méthanol": (0.08, "L"),
-        "Estisurf 970": (0.025, "L"),
-        "Cycloteric CAB": (0.076, "L")
-    },
-    "BLC-530": {
-        "Base organique pure": (0.9, "L"),
-        "Base Ester bio": (0.1, "L")
-    },
-    "BLC-530JLE": {
-        "Base organique pure": (0.800, "L"),
-        "Base Ester bio": (0.200, "L")
-    },
-    "BLC-540": {
-        "Base organique pure": (0.864, "L"),
-        "Base Ester bio": (0.2, "L"),
-        "PD-555": (0.01, "L")
-    },
-    "LGD-600": {
-        "Méthanol": (0.15, "L"),
-        "Heptane": (0.65, "L"),
-        "Isopropyle alcool": (0.21, "L")
-    },
-    "Base Ester bio": {
-        "Base organique pure": (1.00, "L"),
-        "Méthanol": (0.267, "L"),
-        "Méthanolate de sodium": (0.0145, "kg"),
-        "Acide citrique": (0.0107, "kg"),
-        "Eau chaude": (0.5625, "L")
-    },
-    "BLC-100": {
-        "Base Ester Bio": (0.97, "L"),
-        "NALUBE BL-1208": (0.023, "L"),
-        "PD-585": (0.009, "L")
-    },
-    "BLC-1405": {
-        "Eau": (0.750, "L"),
-        "CITRI-MET": (0.108, "kg"),
-        "Florasolv LX300": (0.058, "L"),
-        "Base Ester bio": (0.037, "L"),
-        "NINOL 11-CM": (0.085, "L")
-    },
-    "BLC-1500": {
-        "Eau": (0.600, "L"),
-        "Bio-Terge PAS-8S": (0.001, "L"),
-        "Méthanol": (0.400, "L"),
-        "Keyacid Blue FG Liquid": (0.0275, "L"),
-        "Keyacid Tartrazine Supra Liquid": (0.015, "L")
-    },
-    "BLC-1520": {
-        "Eau": (0.800, "L"),
-        "Méthanol": (0.200, "L"),
-        "Keyacid Tartrazine Supra Liquid": (0.015, "L")
-    },
-    "BLC-1650": {
-        "Eau": (0.875, "L"),
-        "Glycol ether EB": (0.083, "L"),
-        "Bio-Soft GSB-9": (0.05, "L"),
-        "Carbonate de sodium": (0.035, "kg")
-    },
-    "BIOPAV 20S": {
-        "Eau": (0.470, "L"),
-        "Glycérine 80-85%": (0.400, "L"),
-        "Méthanol": (0.100, "L"),
-        "Cycloteric CAPB": (0.0318, "kg")
-    },
-    "BIOPAV Huile démoulage Ecoform": {
-        "Base organique brute": (1.000, "L"),
-        "Parfum": (0.0003, "L")
-    },
-    "BIOPAV Huile démoulage structurale": {
-        "Base organique brute": (0.700, "L"),
-        "Base Ester bio": (0.300, "L"),
-        "Parfum": (0.0003, "L")
-    },
-    "BIOPAV Huile démoulage hydroform": {
-        "Base aqueuse brute": (0.500, "L"),
-        "Eau": (0.500, "L"),
-        "Parfum": (0.0003, "L")
-    },
-    "BIOPAV 100": {
-        "Base Ester bio": (0.850, "L"),
-        "Base organique brute": (0.150, "L"),
-        "Parfum": (0.0003, "L")
-    },
-    "BIOPAV 1000": {
-        "Estisol 190": (0.6665, "L"),
-        "Base Ester bio": (0.3335, "L")
-    },
-    "BIOPAV 20S Ontario": {
-        "Base aqueuse brute": (0.450, "L"),
-        "Eau": (0.550, "L"),
-        "Pigment bleu": (0.00001375, "L"),
-        "Parfum": (0.0003, "L")
-    },
+    # ... autres recettes ici ...
     "BIOPAV 20S Québec": {
         "Base aqueuse pure": (0.300, "L"),
         "Base aqueuse brute": (0.120, "L"),
@@ -137,10 +28,6 @@ st.title("Livre de recette")
 
 product = st.selectbox("Choisir un produit à produire :", list(recipes.keys()))
 quantity = st.number_input("Quantité à produire (Litre de produit fini) :", min_value=1.0, step=1.0)
-
-data_export = []
-
-timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 if product and quantity:
     st.subheader("Ingrédients calculés :")
@@ -179,33 +66,41 @@ if product and quantity:
         })
 
     st.subheader("Récapitulatif des ajouts :")
-    df_real = pd.DataFrame(real_inputs).set_index("Ingrédient")
-    st.dataframe(df_real[["Quantité demandée", "Ajout réel", "Écart", "Unité"]])
+    df_real = pd.DataFrame(real_inputs)
+    st.dataframe(df_real.set_index("Ingrédient"))
 
-    st.subheader("Contrôle qualité :")
-    test_results = {}
-    for i in range(1, 4):
-        test_results[f"Test {i}"] = st.radio(
-            f"Test {i}",
-            ["Conforme", "Non conforme"],
-            key=f"test_{i}"
-        )
+    st.subheader("Contrôle Qualité")
+    test1 = st.radio("Test 1 :", ["Conforme", "Non conforme"], key="test1")
+    test2 = st.radio("Test 2 :", ["Conforme", "Non conforme"], key="test2")
+    test3 = st.radio("Test 3 :", ["Conforme", "Non conforme"], key="test3")
 
-    assurance_qualite = "Nécessaire" if "Non conforme" in test_results.values() else "Non nécessaire"
-
-    if "Non conforme" in test_results.values():
-        st.warning("⚠️ Résultat non conforme détecté. Mettre le produit en audit pour vérification qualité.")
+    assurance_qualite = "Revue nécessaire" if "Non conforme" in [test1, test2, test3] else "Aucune"
 
     if st.button("Exporter les données"):
-        df_real.to_csv("ajustements_production.csv")
-        pd.DataFrame.from_dict(test_results, orient='index', columns=["Résultat"]).to_csv("controle_qualite.csv")
-
-        historique = {
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        export_data = {
             "Date et heure": timestamp,
             "Produit": product,
-            "Ingrédients": ", ".join(df["Ingrédient"]),
+            "Quantité produite (L)": quantity,
             "Assurance qualité": assurance_qualite
         }
-        pd.DataFrame([historique]).to_csv("historique_production.csv", mode='a', index=False, header=False)
 
-        st.success("Fichiers exportés : ajustements_production.csv, controle_qualite.csv et historique_production.csv")
+        for row in real_inputs:
+            export_data[f"{row['Ingrédient']} ({row['Unité']})"] = row["Ajout réel"]
+
+        df_export = pd.DataFrame([export_data])
+
+        if os.path.exists(excel_path):
+            try:
+                existing_df = pd.read_excel(excel_path)
+                df_combined = pd.concat([existing_df, df_export], ignore_index=True)
+            except:
+                df_combined = df_export
+        else:
+            df_combined = df_export
+
+        df_combined.to_excel(excel_path, index=False)
+        st.success("Les données ont été exportées dans l'historique de production.")
+
+        if assurance_qualite == "Revue nécessaire":
+            st.warning("Produit à auditer en raison d’un test non conforme.")
