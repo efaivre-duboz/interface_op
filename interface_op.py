@@ -4,17 +4,19 @@ from datetime import datetime, timedelta
 import os
 import warnings
 
-# Configuration du fichier Excel
-# Chemin OneDrive local
-onedrive_folder = r"C:/Users/efaivre-duboz/OneDrive - SG Energie/Production"
-# Si ce dossier existe localement, on y enregistre; sinon, on utilise le répertoire courant
-if os.path.isdir(onedrive_folder):
-    excel_dir = onedrive_folder
-else:
-    excel_dir = os.getcwd()
+# --- Configuration du fichier Excel ---
+# Détection automatique du dossier OneDrive via variable d'environnement
+onedrive_root = os.environ.get("OneDrive") or os.environ.get("OneDriveCommercial")
+if not onedrive_root:
+    st.error("Impossible de localiser votre dossier OneDrive local. Veuillez vérifier la variable d'environnement OneDrive.")
+    # On bascule sur le répertoire courant si OneDrive introuvable
+    onedrive_root = os.getcwd()
+# Chemin relatif dans OneDrive
+onedrive_folder = os.path.join(onedrive_root, "OneDrive - SG Énergie", "Production")
+# Si le dossier existe localement, on l'utilise, sinon on crée dans le dossier courant
+excel_dir = onedrive_folder if os.path.isdir(onedrive_folder) else os.getcwd()
 os.makedirs(excel_dir, exist_ok=True)
 excel_path = os.path.join(excel_dir, "historique_production.xlsx")
-
 # Utilisateurs
 # Dictionnaire username: password
 users = {
