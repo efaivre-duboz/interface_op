@@ -6,7 +6,7 @@ import warnings
 
 # Configuration du fichier Excel
 # Chemin OneDrive local
-onedrive_folder = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production"
+onedrive_folder = r"C:/Users/efaivre-duboz/OneDrive - SG Energie/Production"
 # Si ce dossier existe localement, on y enregistre; sinon, on utilise le répertoire courant
 if os.path.isdir(onedrive_folder):
     excel_dir = onedrive_folder
