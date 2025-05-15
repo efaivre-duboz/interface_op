@@ -158,7 +158,6 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.user = username
             st.success("Connecté en tant que OP1")
-            st.stop()
         else:
             st.error("Identifiants incorrects.")
     st.stop()
@@ -170,7 +169,6 @@ if not st.session_state.location:
     if st.button("Valider le lieu"):
         st.session_state.location = lieu
         st.success(f"Lieu défini: {lieu}")
-        st.stop()
     st.stop()
 
 # Affichage des informations utilisateur et lieu
@@ -181,7 +179,7 @@ st.markdown(f"**Lieu de production :** {st.session_state.location}")
 if st.session_state.start_time is None:
     st.subheader("Scan d'initialisation")
     scan = st.text_input("Produit, Quantité (ex: BLC-310 V2, 10)", key="scan_input")
-    if scan and st.button("Valider scan"):
+    if st.button("Valider scan"):
         try:
             prod, qty = [s.strip() for s in scan.split(",",1)]
             if prod not in recipes:
@@ -191,7 +189,6 @@ if st.session_state.start_time is None:
                 st.session_state.quantity = float(qty)
                 st.session_state.start_time = datetime.now()
                 st.success("Début de production enregistré.")
-                st.stop()
         except:
             st.error("Format invalide. Utilisez 'Produit, Quantité'.")
     st.stop()
@@ -204,21 +201,27 @@ st.subheader("Quantités calculées")
 data = []
 for ingr, (ratio, unit) in recipe.items():
     needed = ratio * qty
-    data.append({"ingr":ingr, "needed":round(needed,3), "unit":unit})
-st.table(pd.DataFrame(data).rename(columns={"ingr":"Ingrédient","needed":"Qté demandée","unit":"Unité"}).set_index("Ingrédient"))
+    data.append({"ingr": ingr, "needed": round(needed,3), "unit": unit})
+st.table(pd.DataFrame(data)
+         .rename(columns={"ingr":"Ingrédient","needed":"Qté demandée","unit":"Unité"})
+         .set_index("Ingrédient"))
 
 st.subheader("Quantités réelles")
 for row in data:
     key = f"real_{row['ingr']}"
-    if key not in st.session_state:
-        st.session_state[key] = row['needed']
-    st.session_state[key] = st.number_input(f"{row['ingr']} ({row['unit']})", value=st.session_state[key], step=0.001, key=key)
+    default = row['needed']
+    # Valeur par défaut si jamais absent
+    value = st.session_state.get(key, default)
+    # Création du widget stocke automatiquement dans session_state[key]
+    st.number_input(
+        label=f"{row['ingr']} ({row['unit']})", 
+        value=value, step=0.001, key=key
+    )
 
 if st.session_state.prod_end_time is None:
     if st.button("Fin production"):
         st.session_state.prod_end_time = datetime.now()
         st.success("Fin de production enregistrée.")
-        st.stop()
     st.stop()
 
 # 4. QA -> fin QA
@@ -226,15 +229,15 @@ st.markdown(f"**Fin production / Début QA :** {st.session_state.prod_end_time:%
 tests = quality_tests.get(st.session_state.product, [])
 for test in tests:
     key = f"test_{test}"
-    if key not in st.session_state:
-        st.session_state[key] = "Conforme"
-    st.session_state[key] = st.radio(f"{test}", ["Conforme","Non conforme"], key=key)
+    default = "Conforme"
+    # Lecture ou valeur par défaut
+    value = st.session_state.get(key, default)
+    st.radio(label=test, options=["Conforme","Non conforme"], index=0 if value=="Conforme" else 1, key=key)
 
 if st.session_state.qa_end_time is None:
     if st.button("Fin QA"):
         st.session_state.qa_end_time = datetime.now()
         st.success("Fin QA enregistrée.")
-        st.stop()
     st.stop()
 
 # 5. Export des données
@@ -251,11 +254,12 @@ if st.button("Exporter données"):
         "Fin QA": st.session_state.qa_end_time,
         "Durée totale": duration
     }
-    for ingr in recipes[st.session_state.product]:
-        key = f"real_{ingr}"
-        export[f"{ingr} ({recipes[st.session_state.product][ingr][1]})"] = st.session_state[key]
+    # Ajouts réels
+    for row in data:
+        export[f"{row['ingr']} ({row['unit']})"] = st.session_state.get(f"real_{row['ingr']}", None)
+    # Résultats QA
     for test in tests:
-        export[f"Test {test}"] = st.session_state[f"test_{test}"]
+        export[f"Test {test}"] = st.session_state.get(f"test_{test}")
     df_new = pd.DataFrame([export])
     if os.path.exists(excel_path):
         try:
