@@ -138,87 +138,136 @@ recipes = {
 
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
-st.title("Livre de recette")
+for var in [
+    'start_time', 'prod_end_time', 'qa_end_time',
+    'product', 'quantity',
+    'logged_in', 'user', 'location'
+]:
+    if var not in st.session_state:
+        st.session_state[var] = None
 
-product = st.selectbox("Choisir un produit à produire :", list(recipes.keys()))
-quantity = st.number_input("Quantité à produire (Litre de produit fini) :", min_value=1.0, step=1.0)
+st.title("Production & Assurance Qualité")
 
-if product and quantity:
-    st.subheader("Ingrédients calculés :")
-    recipe = recipes[product]
+# 0. Connexion opérateur
+if not st.session_state.logged_in:
+    st.subheader("Connexion opérateur")
+    username = st.text_input("Nom d'utilisateur")
+    password = st.text_input("Mot de passe", type="password")
+    if st.button("Se connecter"):
+        if username == "OP1" and password == "123":
+            st.session_state.logged_in = True
+            st.session_state.user = username
+            st.experimental_rerun()
+        if username == 'Manu' and password == 'latouf':
+            st.session_state.logged_in = True
+            st.session_state.user = username
+            st.experimental_rerun()
+        else:
+            st.error("Nom d'utilisateur ou mot de passe incorrect.")
+    st.stop()
+
+# 0b. Sélection du lieu de production
+if st.session_state.logged_in and not st.session_state.location:
+    st.subheader("Sélection du lieu de production")
+    lieu = st.selectbox("Lieu", ["Québec", "Saint-Marc"])
+    if st.button("Valider le lieu"):
+        st.session_state.location = lieu
+        st.experimental_rerun()
+    st.stop()
+
+# Affichage des informations utilisateur
+st.markdown(f"**Opérateur :** {st.session_state.user}  ")
+st.markdown(f"**Lieu de production :** {st.session_state.location}")
+
+# 1. Scan code-barres
+st.subheader("1. Scan d'initialisation")
+scan = st.text_input(
+    "Scannez le code-barres (format: Produit,Quantité)",
+    key="scan_input"
+)
+if scan and st.session_state.start_time is None:
+    try:
+        prod, qty = [s.strip() for s in scan.split(",", 1)]
+        if prod not in recipes:
+            st.error(f"Produit '{prod}' non reconnu dans les recettes.")
+        else:
+            st.session_state.product = prod
+            st.session_state.quantity = float(qty)
+            st.session_state.start_time = datetime.now()
+            st.experimental_rerun()
+    except:
+        st.error("Format invalide. Utilisez 'Produit,Quantité', ex: BLC-310 V2, 10")
+
+# 2. Saisie production
+if st.session_state.start_time:
+    st.markdown(f"**Début de production :** {st.session_state.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    qty = st.session_state.quantity
+    recipe = recipes[st.session_state.product]
+    st.subheader("Quantités calculées :")
     data = []
-
-    for ingredient, (ratio, unit) in recipe.items():
-        qty = ratio * quantity
-        data.append({
-            "Ingrédient": ingredient,
-            "Ratio": ratio,
-            "Quantité demandée": round(qty, 3),
-            "Unité": unit
-        })
-
-    df = pd.DataFrame(data)
-    st.dataframe(df[["Ingrédient", "Ratio", "Quantité demandée", "Unité"]].set_index("Ingrédient"))
-
+    for ingr, (ratio, unit) in recipe.items():
+        needed = ratio * qty
+        data.append({"ingr": ingr, "ratio": ratio, "needed": round(needed,3), "unit": unit})
+    df_req = pd.DataFrame(data)
+    st.table(df_req.rename(
+        columns={"ingr":"Ingrédient","ratio":"Ratio","needed":"Qté demandée","unit":"Unité"}
+    ).set_index("Ingrédient"))
     st.subheader("Quantités réellement ajoutées :")
-    real_inputs = []
     for row in data:
-        ingredient = row["Ingrédient"]
-        unit = row["Unité"]
-        default_qty = row["Quantité demandée"]
-        real = st.number_input(
-            f"{ingredient} ajouté ({unit})",
-            value=default_qty,
-            key=f"real_{ingredient}"
+        key = f"real_{row['ingr']}"
+        if key not in st.session_state:
+            st.session_state[key] = row['needed']
+        st.session_state[key] = st.number_input(
+            f"{row['ingr']} ({row['unit']}) :",
+            value=st.session_state[key], step=0.001, key=key
         )
-        real_inputs.append({
-            "Ingrédient": ingredient,
-            "Quantité demandée": default_qty,
-            "Ajout réel": round(real, 3),
-            "Écart": round(real - default_qty, 3),
-            "Unité": unit
-        })
+    if st.button("Fin de production"):
+        st.session_state.prod_end_time = datetime.now()
+        st.experimental_rerun()
 
-    st.subheader("Récapitulatif des ajouts :")
-    df_real = pd.DataFrame(real_inputs)
-    st.dataframe(df_real.set_index("Ingrédient"))
+# 3. Contrôle Qualité
+if st.session_state.prod_end_time:
+    st.markdown(f"**Fin production / Début QA :** {st.session_state.prod_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    tests = quality_tests.get(st.session_state.product, [])
+    for test in tests:
+        key = f"test_{test}"
+        if key not in st.session_state:
+            st.session_state[key] = "Conforme"
+        st.session_state[key] = st.radio(f"{test} :", ["Conforme","Non conforme"], key=key)
+    if st.button("Fin Assurance Qualité"):
+        st.session_state.qa_end_time = datetime.now()
+        st.experimental_rerun()
 
-    st.subheader("Contrôle Qualité")
-    selected_tests = quality_tests.get(product, ["Couleur", "Odeur", "pH"])
-    test_results = {}
-    for test in selected_tests:
-        test_results[test] = st.radio(f"{test} :", ["Conforme", "Non conforme"], key=test)
-
-    assurance_qualite = "Revue nécessaire" if "Non conforme" in test_results.values() else "Aucune"
-
+# 4. Export des données
+if st.session_state.qa_end_time:
+    st.markdown(f"**Fin QA :** {st.session_state.qa_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
     if st.button("Exporter les données"):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        export_data = {
-            "Date et heure": timestamp,
-            "Produit": product,
-            "Quantité produite (L)": quantity,
-            "Assurance qualité": assurance_qualite
+        total_duration = st.session_state.qa_end_time - st.session_state.start_time
+        export = {
+            "Opérateur": st.session_state.user,
+            "Lieu de production": st.session_state.location,
+            "Produit": st.session_state.product,
+            "Quantité (L)": st.session_state.quantity,
+            "Début production": st.session_state.start_time,
+            "Fin production": st.session_state.prod_end_time,
+            "Fin QA": st.session_state.qa_end_time,
+            "Durée totale": total_duration
         }
-
-        for row in real_inputs:
-            export_data[f"{row['Ingrédient']} ({row['Unité']})"] = row["Ajout réel"]
-
-        for test, result in test_results.items():
-            export_data[f"Test - {test}"] = result
-
-        df_export = pd.DataFrame([export_data])
-
+        for ingr in recipes[st.session_state.product]:
+            key = f"real_{ingr}"
+            export[f"{ingr} ({recipes[st.session_state.product][ingr][1]})"] = st.session_state[key]
+        for test in quality_tests.get(st.session_state.product, []):
+            export[f"Test {test}"] = st.session_state[f"test_{test}"]
+        df_new = pd.DataFrame([export])
         if os.path.exists(excel_path):
             try:
-                existing_df = pd.read_excel(excel_path)
-                df_combined = pd.concat([existing_df, df_export], ignore_index=True)
+                df_old = pd.read_excel(excel_path)
+                df_all = pd.concat([df_old, df_new], ignore_index=True)
             except:
-                df_combined = df_export
+                df_all = df_new
         else:
-            df_combined = df_export
-
-        df_combined.to_excel(excel_path, index=False)
-        st.success("Les données ont été exportées dans l'historique de production.")
-
-        if assurance_qualite == "Revue nécessaire":
-            st.warning("Produit à auditer en raison d’un test non conforme.")
+            df_all = df_new
+        df_all.to_excel(excel_path, index=False)
+        st.success("Données exportées vers l'historique Excel.")
+        if any(st.session_state[f"test_{t}"] == "Non conforme" for t in quality_tests.get(st.session_state.product, [])):
+            st.warning("Produit à auditer : un test est non conforme.")
