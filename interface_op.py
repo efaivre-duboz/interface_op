@@ -139,137 +139,121 @@ recipes = {
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
 # --- Initialisation du session_state ---
-if 'stage' not in st.session_state:
-    st.session_state.stage = 0  # 0: login, 1: lieu, 2: scan, 3: prod, 4: QA
-for key in ['user','location','start_time','prod_end_time','qa_end_time','pause_start','total_pause','product','quantity']:
-    if key not in st.session_state:
-        st.session_state[key] = None
+state_vars = [
+    'stage',  # 0=login,1=lieu,2=scan,3=prod,4=QA
+    'user','location','product','quantity',
+    'start_time','prod_end_time','qa_end_time','pause_start','total_pause'
+]
+for k in state_vars:
+    if k not in st.session_state:
+        st.session_state[k] = 0 if k == 'stage' else None
 
-# Callback functions
-def to_stage(next_stage):
-    st.session_state.stage = next_stage
-    # clear potential old messages
-
-# UI
 st.title("Production & Assurance Qualité")
 
-# Stage 0: Login
+# --- Callbacks ---
+def login():
+    st.session_state.user = st.session_state.login_user
+    st.session_state.stage = 1
+
+def set_location():
+    st.session_state.location = st.session_state.select_location
+    st.session_state.stage = 2
+
+def logout():
+    for k in state_vars:
+        st.session_state[k] = 0 if k == 'stage' else None
+
+def handle_scan():
+    parts = st.session_state.scan_input.split(',', 1)
+    prod, qty = parts[0].strip(), parts[1].strip()
+    st.session_state.product = prod
+    st.session_state.quantity = float(qty)
+    st.session_state.start_time = datetime.now()
+    st.session_state.total_pause = timedelta()
+    st.session_state.stage = 3
+
+def start_pause():
+    st.session_state.pause_start = datetime.now()
+
+def resume_prod():
+    now = datetime.now()
+    st.session_state.total_pause += now - st.session_state.pause_start
+    st.session_state.pause_start = None
+
+def end_production():
+    st.session_state.prod_end_time = datetime.now()
+    st.session_state.stage = 4
+
+def finalize():
+    st.session_state.qa_end_time = datetime.now()
+    active_dur = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
+    record = {
+        'Opérateur': st.session_state.user,
+        'Lieu': st.session_state.location,
+        'Produit': st.session_state.product,
+        'Quantité (L)': st.session_state.quantity,
+        'Début prod': st.session_state.start_time,
+        'Fin prod': st.session_state.prod_end_time,
+        'Pause totale': st.session_state.total_pause,
+        'Fin QA': st.session_state.qa_end_time,
+        'Durée active': active_dur
+    }
+    for ingr, (r, u) in recipes[st.session_state.product].items():
+        record[f"{ingr} ({u})"] = st.session_state.get(f"real_{ingr}")
+    for t in quality_tests.get(st.session_state.product, []):
+        record[f"Test {t}"] = st.session_state.get(f"test_{t}")
+    df_new = pd.DataFrame([record])
+    if os.path.exists(excel_path):
+        try:
+            df_old = pd.read_excel(excel_path)
+            df_all = pd.concat([df_old, df_new], ignore_index=True)
+        except:
+            df_all = df_new
+    else:
+        df_all = df_new
+    df_all.to_excel(excel_path, index=False)
+    # reset for new cycle
+    for var in ['product','quantity','start_time','prod_end_time','qa_end_time','pause_start','total_pause']:
+        st.session_state[var] = None
+    st.session_state.stage = 2
+
+# --- UI by stage ---
 if st.session_state.stage == 0:
     st.subheader("Connexion opérateur")
-    user = st.text_input("Nom d'utilisateur", key="login_user")
-    pwd  = st.text_input("Mot de passe", type="password", key="login_pwd")
-    if st.button("Se connecter", on_click=lambda: st.session_state.update({'user': user, 'stage': 1})):
-        pass
-
-# Stage 1: Choix du lieu
+    st.text_input("Nom d'utilisateur", key="login_user")
+    st.text_input("Mot de passe", type="password", key="login_pwd")
+    st.button("Se connecter", on_click=login)
 elif st.session_state.stage == 1:
     st.subheader("Sélection du lieu de production")
-    lieu = st.selectbox("Lieu", ["Québec", "Saint-Marc"], key="select_location")
-    if st.button("Valider lieu", on_click=lambda: st.session_state.update({'location': lieu, 'stage': 2})):
-        pass
-
-# Stage 2: Scan + Logout
+    st.selectbox("Lieu", ["Québec","Saint-Marc"], key="select_location")
+    st.button("Valider lieu", on_click=set_location)
 elif st.session_state.stage == 2:
+    # Logout and scan
     col1, col2 = st.columns([3,1])
     with col2:
-        if st.button("Déconnexion", on_click=lambda: st.session_state.clear()):
-            pass
+        st.button("Déconnexion", on_click=logout)
     with col1:
         st.subheader("Scan d'initialisation")
-        scan = st.text_input("Produit, Quantité (ex: BLC-310 V2,10)", key="scan_input")
-        def handle_scan():
-            parts = scan.split(',',1)
-            if len(parts) == 2:
-                prod, qty = parts[0].strip(), parts[1].strip()
-                if prod in recipes:
-                    try:
-                        qty_f = float(qty)
-                        st.session_state.product = prod
-                        st.session_state.quantity = qty_f
-                        st.session_state.start_time = datetime.now()
-                        st.session_state.total_pause = timedelta()
-                        st.session_state.stage = 3
-                    except ValueError:
-                        st.error("Quantité doit être un nombre.")
-                else:
-                    st.error(f"Produit '{prod}' non reconnu.")
-            else:
-                st.error("Format invalide. Utilisez 'Produit,Quantité'.")
-        if st.button("Valider scan", on_click=handle_scan):
-            pass
-    # Show operator and location above or in sidebar
-    st.sidebar.markdown(f"**Opérateur :** {st.session_state.user}")
-    st.sidebar.markdown(f"**Lieu :** {st.session_state.location}")
-
-# Stage 3: Production & Pause
+        st.text_input("Produit,Quantité (ex: BLC-310 V2,10)", key="scan_input")
+        st.button("Valider scan", on_click=handle_scan)
 elif st.session_state.stage == 3:
     st.markdown(f"**Début prod :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
     qty = st.session_state.quantity
     rec = recipes[st.session_state.product]
     st.subheader("Recette calculée")
-    df_req = pd.DataFrame([{'Ingrédient': i, 'Qté demandée': round(r*qty,3), 'Unité': u} for i,(r,u) in rec.items()]).set_index('Ingrédient')
+    df_req = pd.DataFrame([{ 'Ingrédient': i, 'Qté demandée': round(r*qty,3), 'Unité': u }
+                            for i,(r,u) in rec.items()]).set_index('Ingrédient')
     st.table(df_req)
     st.subheader("Quantités réelles")
     for ingr,(r,u) in rec.items():
-        key = f"real_{ingr}"
-        default = round(r*qty,3)
-        st.number_input(f"{ingr} ({u})", value=st.session_state.get(key,default), step=0.001, key=key)
-    # Pause/Resume with callbacks
-    if st.session_state.pause_start is None:
-        if st.button("Pause", on_click=lambda: st.session_state.update({'pause_start': datetime.now()})):
-            pass
-    else:
+        st.number_input(f"{ingr} ({u})", value=st.session_state.get(f"real_{ingr}", round(r*qty,3)), key=f"real_{ingr}")
+    st.button("Pause", on_click=start_pause)
+    if st.session_state.pause_start:
         st.markdown(f"**En pause depuis :** {st.session_state.pause_start:%H:%M:%S}")
-        def resume():
-            now = datetime.now()
-            st.session_state.total_pause += now - st.session_state.pause_start
-            st.session_state.pause_start = None
-        if st.button("Reprendre", on_click=resume):
-            pass
-    # Fin production
-    if st.button("Fin production", on_click=lambda: st.session_state.update({'prod_end_time': datetime.now(), 'stage': 4})):
-        pass
-
-# Stage 4: QA & Export
+        st.button("Reprendre", on_click=resume_prod)
+    st.button("Fin production", on_click=end_production)
 elif st.session_state.stage == 4:
     st.markdown(f"**Fin prod / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
-    tests = quality_tests.get(st.session_state.product, [])
-    for t in tests:
-        st.radio(label=t, options=["Conforme","Non conforme"], key=f"test_{t}")
-    def finalize():
-        st.session_state.qa_end_time = datetime.now()
-        # calculate active duration
-        active_dur = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
-        # build record
-        record = {
-            'Opérateur': st.session_state.user,
-            'Lieu': st.session_state.location,
-            'Produit': st.session_state.product,
-            'Quantité (L)': st.session_state.quantity,
-            'Début prod': st.session_state.start_time,
-            'Fin prod': st.session_state.prod_end_time,
-            'Pause totale': st.session_state.total_pause,
-            'Fin QA': st.session_state.qa_end_time,
-            'Durée active': active_dur
-        }
-        for ingr in rec:
-            unit = recipes[st.session_state.product][ingr][1]
-            record[f"{ingr} ({unit})"] = st.session_state.get(f"real_{ingr}")
-        for t in tests:
-            record[f"Test {t}"] = st.session_state.get(f"test_{t}")
-        df_new = pd.DataFrame([record])
-        if os.path.exists(excel_path):
-            try:
-                df_old = pd.read_excel(excel_path)
-                df_all = pd.concat([df_old, df_new], ignore_index=True)
-            except:
-                df_all = df_new
-        else:
-            df_all = df_new
-        df_all.to_excel(excel_path, index=False)
-        # Reset for new cycle
-        for key in ['start_time','prod_end_time','qa_end_time','pause_start','total_pause','product','quantity']:
-            st.session_state[key] = None
-        st.session_state.stage = 2
-    if st.button("Fin QA", on_click=finalize):
-        st.success("Données exportées. Nouveau cycle." )
+    for t in quality_tests.get(st.session_state.product, []):
+        st.radio(t, ["Conforme","Non conforme"], key=f"test_{t}")
+    st.button("Fin QA", on_click=finalize)
