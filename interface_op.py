@@ -139,39 +139,35 @@ recipes = {
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
 # --- Initialisation du session_state ---
-for var in [
-    'logged_in', 'user',
-    'location',
+for key in [
+    'logged_in', 'user', 'location',
     'start_time', 'prod_end_time', 'qa_end_time',
     'pause_start', 'total_pause', 'product', 'quantity'
 ]:
-    if var not in st.session_state:
-        st.session_state[var] = None
+    if key not in st.session_state:
+        st.session_state[key] = None
 
-# --- Titre de l'appli ---
 st.title("Production & Assurance Qualité")
 
-# --- 0. Connexion ---
+# --- 0. Connexion (page unique avec Logout) ---
 if not st.session_state.logged_in:
     st.subheader("Connexion opérateur")
-    user = st.text_input("Nom d'utilisateur")
-    pwd = st.text_input("Mot de passe", type="password")
-    if st.button("Se connecter"):
-        if user == "OP1" and pwd == "123":
-            st.session_state.logged_in = True
-            st.session_state.user = user
-            st.success("Connecté en tant que OP1.")
-        else:
-            st.error("Identifiants incorrects.")
-    st.stop()
-
-# --- Bouton Logout sur page scan ---
-if st.session_state.logged_in and st.session_state.start_time is None:
-    if st.button("Logout"):
-        # Reset complet de l'état
-        for key in list(st.session_state.keys()):
-            st.session_state[key] = None
-        st.success("Déconnecté.")
+    u = st.text_input("Nom d'utilisateur")
+    p = st.text_input("Mot de passe", type="password")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Se connecter"):
+            if u == "OP1" and p == "123":
+                st.session_state.logged_in = True
+                st.session_state.user = u
+                st.success("Connecté en tant que OP1.")
+            else:
+                st.error("Identifiants incorrects.")
+    with c2:
+        if st.button("Logout"):
+            for k in list(st.session_state.keys()):
+                st.session_state[k] = None
+            st.success("Déconnecté.")
     st.stop()
 
 # --- 1. Sélection du lieu ---
@@ -180,127 +176,97 @@ if st.session_state.location is None:
     lieu = st.selectbox("Lieu", ["Québec", "Saint-Marc"])
     if st.button("Valider lieu"):
         st.session_state.location = lieu
-        st.success(f"Lieu défini : {lieu}.")
+        st.success(f"Lieu : {lieu}")
     st.stop()
 
-# Affichage opérateur & lieu
+# Affichage informations globales
 st.markdown(f"**Opérateur :** {st.session_state.user}")
 st.markdown(f"**Lieu :** {st.session_state.location}")
 
 # --- 2. Scan & début production ---
 if st.session_state.start_time is None:
     st.subheader("Scan d'initialisation")
-    scan = st.text_input("Produit, Quantité (ex: BLC-310 V2, 10)", key="scan_input")
+    scan = st.text_input("Produit,Quantité (ex: BLC-310 V2,10)", key="scan_input")
     if st.button("Valider scan"):
         try:
-            prod, qty = [s.strip() for s in scan.split(",", 1)]
-            if prod not in recipes:
-                st.error(f"Produit '{prod}' non reconnu.")
-            else:
-                st.session_state.product = prod
-                st.session_state.quantity = float(qty)
-                st.session_state.start_time = datetime.now()
-                st.session_state.total_pause = timedelta()
-                st.success("Début de production enregistré.")
+            prod, qty = [x.strip() for x in scan.split(",",1)]
+            assert prod in recipes
+            st.session_state.product = prod
+            st.session_state.quantity = float(qty)
+            st.session_state.start_time = datetime.now()
+            st.session_state.total_pause = timedelta()
+            st.success("Début production capturé.")
+        except AssertionError:
+            st.error("Produit non reconnu.")
         except:
-            st.error("Format invalide. Utilisez 'Produit, Quantité'.")
+            st.error("Format invalide.")
     st.stop()
 
-# --- 3. Production ---
-st.markdown(f"**Début production :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
-qty = st.session_state.quantity
-recipe = recipes[st.session_state.product]
+# Affichage début production
+st.markdown(f"**Début prod :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
 
-st.subheader("Recette")
-data = []
-for ingr, (ratio, unit) in recipe.items():
-    needed = ratio * qty
-    data.append({"ingr": ingr, "needed": round(needed, 3), "unit": unit})
-st.table(
-    pd.DataFrame(data)
-      .rename(columns={"ingr": "Ingrédient", "needed": "Qté demandée", "unit": "Unité"})
-      .set_index("Ingrédient")
-)
+# --- 3. Production & pause ---
+qty = st.session_state.quantity
+rec = recipes[st.session_state.product]
+st.subheader("Recette calculée")
+df = pd.DataFrame([{'Ingrédient':i,'Qté':round(r*qty,3),'Unité':u} for i,(r,u) in rec.items()]).set_index('Ingrédient')
+st.table(df)
 
 st.subheader("Quantités réelles")
-for row in data:
-    key = f"real_{row['ingr']}"
-    default = row['needed']
-    st.number_input(
-        label=f"{row['ingr']} ({row['unit']})", 
-        value=st.session_state.get(key, default),
-        step=0.001,
-        key=key
-    )
+for ingr in rec:
+    key = f"real_{ingr}"
+    default = round(rec[ingr][0]*qty,3)
+    st.number_input(ingr, value=st.session_state.get(key,default), step=0.001, key=key)
 
-# Pause / Reprise
 if st.session_state.pause_start is None:
-    if st.button("Pause production"):
+    if st.button("Pause" ):
         st.session_state.pause_start = datetime.now()
         st.success("Production en pause.")
         st.stop()
 else:
     st.markdown(f"**En pause depuis :** {st.session_state.pause_start:%H:%M:%S}")
-    if st.button("Reprendre production"):
-        end = datetime.now()
-        st.session_state.total_pause += end - st.session_state.pause_start
+    if st.button("Reprendre"):
+        now = datetime.now()
+        st.session_state.total_pause += now - st.session_state.pause_start
         st.session_state.pause_start = None
         st.success("Production reprise.")
         st.stop()
 
-# Fin production
 if st.session_state.prod_end_time is None:
     if st.button("Fin production"):
         st.session_state.prod_end_time = datetime.now()
-        st.success("Fin de production enregistrée.")
+        st.success("Fin production capturée.")
     st.stop()
 
-# --- 4. Assurance Qualité ---
-st.markdown(f"**Fin production / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
-tests = quality_tests.get(st.session_state.product, [])
-for test in tests:
-    key = f"test_{test}"
-    default = "Conforme"
-    st.radio(
-        label=test,
-        options=["Conforme", "Non conforme"],
-        index=0 if st.session_state.get(key, default) == "Conforme" else 1,
-        key=key
-    )
+# --- 4. Assurance Qualité & export ---
+st.markdown(f"**Fin prod / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
+tests = quality_tests.get(st.session_state.product,[])
+for t in tests:
+    st.radio(t, ["Conforme","Non conforme"], key=f"test_{t}")
 
-# Bouton Fin QA = Export\if st.button("Fin QA"):
+if st.button("Fin QA"):
     st.session_state.qa_end_time = datetime.now()
-    # Calcul durée active hors pause
-    active_duration = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
-    # Construction de l'enregistrement
-    record = {
-        "Opérateur": st.session_state.user,
-        "Lieu": st.session_state.location,
-        "Produit": st.session_state.product,
-        "Quantité (L)": st.session_state.quantity,
-        "Début production": st.session_state.start_time,
-        "Fin production": st.session_state.prod_end_time,
-        "Pause totale": st.session_state.total_pause,
-        "Fin QA": st.session_state.qa_end_time,
-        "Durée active": active_duration
-    }
-    for row in data:
-        record[f"{row['ingr']} ({row['unit']})"] = st.session_state.get(f"real_{row['ingr']}")
-    for test in tests:
-        record[f"Test {test}"] = st.session_state.get(f"test_{test}")
-    df_new = pd.DataFrame([record])
-    if os.path.exists(excel_path):
-        try:
-            df_old = pd.read_excel(excel_path)
-            df_all = pd.concat([df_old, df_new], ignore_index=True)
-        except:
-            df_all = df_new
-    else:
-        df_all = df_new
-    df_all.to_excel(excel_path, index=False)
-    st.success("Données exportées. Retour au scan.")
-    # Reset pour nouveau cycle (garde login)
-    for key in ['start_time', 'prod_end_time', 'qa_end_time', 'product', 'quantity', 'pause_start', 'total_pause']:
-        st.session_state[key] = None
+    active = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
+    rec_record = {**{
+        'Opérateur':st.session_state.user,
+        'Lieu':st.session_state.location,
+        'Produit':st.session_state.product,
+        'Quantité':st.session_state.quantity,
+        'Début prod':st.session_state.start_time,
+        'Fin prod':st.session_state.prod_end_time,
+        'Pause':st.session_state.total_pause,
+        'Fin QA':st.session_state.qa_end_time,
+        'Durée active':active
+    }}
+    rec_record.update({ingr:st.session_state[f"real_{ingr}"] for ingr in rec})
+    rec_record.update({f"Test {t}":st.session_state[f"test_{t}"] for t in tests})
+    dfnew = pd.DataFrame([rec_record])
+    old = pd.read_excel(excel_path) if os.path.exists(excel_path) else pd.DataFrame()
+    pd.concat([old,dfnew],ignore_index=True).to_excel(excel_path,index=False)
+    st.success("Données exportées. Nouveau cycle.")
+    # Reset cycle
+    for k in ['start_time','prod_end_time','qa_end_time','product','quantity','pause_start','total_pause']:
+        st.session_state[k]=None
     st.stop()
+
 
