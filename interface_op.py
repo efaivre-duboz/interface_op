@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 
    #Emplacement du fichier Excel sur OneDrive#
-excel_path = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production/historique_production.xlxs"
+excel_path = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production/historique_production.xlsx"
 os.makedirs(os.path.dirname(excel_path), exist_ok=True)
 recipes = {
     "BLC-310 V2": {
