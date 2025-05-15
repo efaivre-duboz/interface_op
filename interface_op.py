@@ -148,9 +148,7 @@ state_vars = [
 ]
 for key in state_vars:
     if key not in st.session_state:
-        # stage starts at 0
-        initial = 0 if key == 'stage' else None
-        st.session_state[key] = initial
+        st.session_state[key] = 0 if key == 'stage' else None
 
 st.title("Production & Assurance Qualité")
 
@@ -271,7 +269,7 @@ if st.session_state.stage == 4:
         active_dur = (st.session_state.qa_end_time - 
                       st.session_state.start_time - 
                       st.session_state.total_pause)
-        # Préparation des données
+        # Construction de l'enregistrement
         record = {
             'Opérateur': st.session_state.user,
             'Lieu': st.session_state.location,
@@ -285,8 +283,8 @@ if st.session_state.stage == 4:
         }
         # Ingrédients réels
         for ingr in recipes[st.session_state.product]:
-            record[f"{ingr} ({recipes[st.session_state.product][ingr][1]})"] = 
-                st.session_state.get(f"real_{ingr}")
+            unit = recipes[st.session_state.product][ingr][1]
+            record[f"{ingr} ({unit})"] = st.session_state.get(f"real_{ingr}")
         # Résultats QA
         for t in tests:
             record[f"Test {t}"] = st.session_state.get(f"test_{t}")
@@ -302,9 +300,8 @@ if st.session_state.stage == 4:
             df_all = df_new
         df_all.to_excel(excel_path, index=False)
         st.success("Données exportées. Retour au scan.")
-        # Reset cycle (stage = 2 for scan)
-        for key in ['start_time', 'prod_end_time', 'qa_end_time',
-                    'pause_start', 'total_pause', 'product', 'quantity']:
+        # Reset cycle (stage = 2 pour scan)
+        for key in ['start_time','prod_end_time','qa_end_time','pause_start','total_pause','product','quantity']:
             st.session_state[key] = None
         st.session_state.stage = 2
         st.experimental_rerun()
