@@ -138,6 +138,12 @@ recipes = {
 
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
+def _rerun():
+    try:
+        st.experimental_rerun()
+    except AttributeError:
+        st.stop()
+       
 for var in [
     'start_time', 'prod_end_time', 'qa_end_time',
     'product', 'quantity',
