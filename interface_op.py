@@ -304,4 +304,4 @@ if st.session_state.stage == 4:
         for key in ['start_time','prod_end_time','qa_end_time','pause_start','total_pause','product','quantity']:
             st.session_state[key] = None
         st.session_state.stage = 2
-        st.experimental_rerun()
+        st.stop()
