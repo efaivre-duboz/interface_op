@@ -138,6 +138,14 @@ recipes = {
 
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
+for var in [
+    'start_time', 'prod_end_time', 'qa_end_time',
+    'product', 'quantity',
+    'logged_in', 'user', 'location'
+]:
+    if var not in st.session_state:
+        st.session_state[var] = None
+       
 st.title("Production & Assurance Qualité")
 
 # 0. Connexion opérateur
