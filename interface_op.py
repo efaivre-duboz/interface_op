@@ -3,9 +3,9 @@ import pandas as pd
 from datetime import datetime
 import os
 
-# Emplacement du fichier Excel sur OneDrive
-excel_path = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production/historique_production.xlsx"
-
+   #Emplacement du fichier Excel sur OneDrive#
+excel_path = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production/historique_production"
+os.makedirs(os.path.dirname(excel_path), exist_ok=True)
 recipes = {
     "BLC-310 V2": {
         "Base organique pure": (0.98, "L"),
