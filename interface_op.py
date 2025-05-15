@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
    #Emplacement du fichier Excel sur OneDrive#
@@ -138,44 +138,55 @@ recipes = {
 
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
+# Initialisation du state
 for var in [
+    'logged_in', 'user',
+    'location',
     'start_time', 'prod_end_time', 'qa_end_time',
-    'product', 'quantity',
-    'logged_in', 'user', 'location'
+    'pause_start', 'total_pause'
 ]:
     if var not in st.session_state:
         st.session_state[var] = None
-       
+
 st.title("Production & Assurance Qualité")
 
-# 0. Connexion opérateur
+# --- 0. Connexion ---
 if not st.session_state.logged_in:
     st.subheader("Connexion opérateur")
-    username = st.text_input("Nom d'utilisateur")
-    password = st.text_input("Mot de passe", type="password")
+    user = st.text_input("Nom d'utilisateur")
+    pwd = st.text_input("Mot de passe", type="password")
     if st.button("Se connecter"):
-        if username == "OP1" and password == "123":
+        if user == "OP1" and pwd == "123":
             st.session_state.logged_in = True
-            st.session_state.user = username
+            st.session_state.user = user
             st.success("Connecté en tant que OP1")
         else:
             st.error("Identifiants incorrects.")
     st.stop()
 
-# 1. Sélection du lieu de production
+# --- Bouton logout sur page scan ---
+if st.session_state.logged_in and st.session_state.start_time is None:
+    if st.button("Logout"):
+        # Réinitialiser tout
+        for var in list(st.session_state.keys()):
+            st.session_state[var] = None
+        st.success("Déconnecté.")
+        st.stop()
+
+# --- 1. Sélection lieu (avant production) ---
 if not st.session_state.location:
     st.subheader("Sélection du lieu de production")
     lieu = st.selectbox("Lieu", ["Québec", "Saint-Marc"])
-    if st.button("Valider le lieu"):
+    if st.button("Valider lieu"):
         st.session_state.location = lieu
-        st.success(f"Lieu défini: {lieu}")
+        st.success(f"Lieu défini : {lieu}")
     st.stop()
 
-# Affichage des informations utilisateur et lieu
+# Affichage info opérateur & lieu
 st.markdown(f"**Opérateur :** {st.session_state.user}")
-st.markdown(f"**Lieu de production :** {st.session_state.location}")
+st.markdown(f"**Lieu :** {st.session_state.location}")
 
-# 2. Scan code-barres -> début production
+# --- 2. Scan code-barres => début production ---
 if st.session_state.start_time is None:
     st.subheader("Scan d'initialisation")
     scan = st.text_input("Produit, Quantité (ex: BLC-310 V2, 10)", key="scan_input")
@@ -188,20 +199,22 @@ if st.session_state.start_time is None:
                 st.session_state.product = prod
                 st.session_state.quantity = float(qty)
                 st.session_state.start_time = datetime.now()
+                # Initialiser pause
+                st.session_state.total_pause = timedelta()
                 st.success("Début de production enregistré.")
         except:
             st.error("Format invalide. Utilisez 'Produit, Quantité'.")
     st.stop()
 
-# 3. Saisie production -> fin production
+# --- 3. Production en cours ---
 st.markdown(f"**Début production :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
 qty = st.session_state.quantity
 recipe = recipes[st.session_state.product]
-st.subheader("Quantités calculées")
+st.subheader("Recette")
 data = []
 for ingr, (ratio, unit) in recipe.items():
     needed = ratio * qty
-    data.append({"ingr": ingr, "needed": round(needed,3), "unit": unit})
+    data.append({"ingr":ingr, "needed":round(needed,3), "unit":unit})
 st.table(pd.DataFrame(data)
          .rename(columns={"ingr":"Ingrédient","needed":"Qté demandée","unit":"Unité"})
          .set_index("Ingrédient"))
@@ -210,57 +223,63 @@ st.subheader("Quantités réelles")
 for row in data:
     key = f"real_{row['ingr']}"
     default = row['needed']
-    # Valeur par défaut si jamais absent
     value = st.session_state.get(key, default)
-    # Création du widget stocke automatiquement dans session_state[key]
-    st.number_input(
-        label=f"{row['ingr']} ({row['unit']})", 
-        value=value, step=0.001, key=key
-    )
+    st.session_state[key] = st.number_input(f"{row['ingr']} ({row['unit']})", value=value, step=0.001, key=key)
 
+# Bouton pause / reprendre
+if st.session_state.pause_start is None:
+    if st.button("Pause production"):
+        st.session_state.pause_start = datetime.now()
+        st.success("Production en pause.")
+        st.stop()
+else:
+    st.markdown(f"**En pause depuis :** {st.session_state.pause_start:%H:%M:%S}")
+    if st.button("Reprendre production"):
+        pause_end = datetime.now()
+        st.session_state.total_pause += pause_end - st.session_state.pause_start
+        st.session_state.pause_start = None
+        st.success("Production reprise.")
+        st.stop()
+
+# Bouton Fin production
 if st.session_state.prod_end_time is None:
     if st.button("Fin production"):
         st.session_state.prod_end_time = datetime.now()
         st.success("Fin de production enregistrée.")
     st.stop()
 
-# 4. QA -> fin QA
+# --- 4. Contrôle Qualité ---
 st.markdown(f"**Fin production / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
 tests = quality_tests.get(st.session_state.product, [])
 for test in tests:
     key = f"test_{test}"
     default = "Conforme"
-    # Lecture ou valeur par défaut
     value = st.session_state.get(key, default)
-    st.radio(label=test, options=["Conforme","Non conforme"], index=0 if value=="Conforme" else 1, key=key)
+    st.session_state[key] = st.radio(test, ["Conforme","Non conforme"], index=0 if value=="Conforme" else 1, key=key)
 
-if st.session_state.qa_end_time is None:
-    if st.button("Fin QA"):
-        st.session_state.qa_end_time = datetime.now()
-        st.success("Fin QA enregistrée.")
-    st.stop()
-
-# 5. Export des données
-st.markdown(f"**Fin QA :** {st.session_state.qa_end_time:%Y-%m-%d %H:%M:%S}")
-if st.button("Exporter données"):
-    duration = st.session_state.qa_end_time - st.session_state.start_time
-    export = {
+# Bouton Fin QA (export)
+if st.button("Fin QA"):
+    st.session_state.qa_end_time = datetime.now()
+    # Préparer export
+    duration = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
+    record = {
         "Opérateur": st.session_state.user,
         "Lieu": st.session_state.location,
         "Produit": st.session_state.product,
         "Quantité (L)": st.session_state.quantity,
-        "Début production": st.session_state.start_time,
-        "Fin production": st.session_state.prod_end_time,
+        "Début prod": st.session_state.start_time,
+        "Fin prod": st.session_state.prod_end_time,
+        "Pause totale": st.session_state.total_pause,
         "Fin QA": st.session_state.qa_end_time,
-        "Durée totale": duration
+        "Durée active": duration
     }
-    # Ajouts réels
+    # Ingrédients réels
     for row in data:
-        export[f"{row['ingr']} ({row['unit']})"] = st.session_state.get(f"real_{row['ingr']}", None)
+        record[f"{row['ingr']} ({row['unit']})"] = st.session_state.get(f"real_{row['ingr']}")
     # Résultats QA
     for test in tests:
-        export[f"Test {test}"] = st.session_state.get(f"test_{test}")
-    df_new = pd.DataFrame([export])
+        record[f"Test {test}"] = st.session_state.get(f"test_{test}")
+    df_new = pd.DataFrame([record])
     if os.path.exists(excel_path):
         try:
             df_old = pd.read_excel(excel_path)
@@ -270,4 +289,8 @@ if st.button("Exporter données"):
     else:
         df_all = df_new
     df_all.to_excel(excel_path, index=False)
-    st.success("Données exportées vers Excel.")
+    st.success("Données exportées. Retour au scan.")
+    # Réinitialiser pour nouveau cycle
+    for key in ['start_time','prod_end_time','qa_end_time','product','quantity','pause_start','total_pause']:
+        st.session_state[key] = None
+    st.experimental_rerun()
