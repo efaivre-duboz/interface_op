@@ -187,7 +187,7 @@ if st.session_state.stage == 2:
         if st.button("Déconnexion"):
             for k in state_vars:
                 st.session_state[k] = 0 if k == 'stage' else None
-            st.experimental_rerun()
+            st.stop()
     with col1:
         st.subheader("Scan d'initialisation")
         scan = st.text_input("Produit, Quantité (ex: BLC-310 V2,10)", key="scan_input")
