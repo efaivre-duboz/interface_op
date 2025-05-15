@@ -149,63 +149,63 @@ for key in [
 
 st.title("Production & Assurance Qualité")
 
-# --- 0. Connexion (page unique avec Logout) ---
+# --- 1. Connexion ---
 if not st.session_state.logged_in:
     st.subheader("Connexion opérateur")
     u = st.text_input("Nom d'utilisateur")
     p = st.text_input("Mot de passe", type="password")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Se connecter"):
-            if u == "OP1" and p == "123":
-                st.session_state.logged_in = True
-                st.session_state.user = u
-                st.success("Connecté en tant que OP1.")
-            else:
-                st.error("Identifiants incorrects.")
-    with c2:
-        if st.button("Logout"):
-            for k in list(st.session_state.keys()):
-                st.session_state[k] = None
-            st.success("Déconnecté.")
+    if st.button("Se connecter"):
+        if u == "OP1" and p == "123":
+            st.session_state.logged_in = True
+            st.session_state.user = u
+            st.success("Connecté en tant que OP1.")
+        else:
+            st.error("Identifiants incorrects.")
     st.stop()
 
-# --- 1. Sélection du lieu ---
+# --- 2. Sélection du lieu ---
 if st.session_state.location is None:
     st.subheader("Sélection du lieu de production")
     lieu = st.selectbox("Lieu", ["Québec", "Saint-Marc"])
     if st.button("Valider lieu"):
         st.session_state.location = lieu
-        st.success(f"Lieu : {lieu}")
+        st.success(f"Lieu défini : {lieu}.")
     st.stop()
 
-# Affichage informations globales
+# Affichage opérateur & lieu
 st.markdown(f"**Opérateur :** {st.session_state.user}")
 st.markdown(f"**Lieu :** {st.session_state.location}")
 
-# --- 2. Scan & début production ---
+# --- 3. Page Scan (début production) avec option Logout ---
 if st.session_state.start_time is None:
-    st.subheader("Scan d'initialisation")
-    scan = st.text_input("Produit,Quantité (ex: BLC-310 V2,10)", key="scan_input")
-    if st.button("Valider scan"):
-        try:
-            prod, qty = [x.strip() for x in scan.split(",",1)]
-            assert prod in recipes
-            st.session_state.product = prod
-            st.session_state.quantity = float(qty)
-            st.session_state.start_time = datetime.now()
-            st.session_state.total_pause = timedelta()
-            st.success("Début production capturé.")
-        except AssertionError:
-            st.error("Produit non reconnu.")
-        except:
-            st.error("Format invalide.")
+    col1, col2 = st.columns([3,1])
+    with col2:
+        if st.button("Logout"):
+            for k in list(st.session_state.keys()):
+                st.session_state[k] = None
+            st.success("Déconnecté.")
+    with col1:
+        st.subheader("Scan d'initialisation")
+        scan = st.text_input("Produit,Quantité (ex: BLC-310 V2,10)", key="scan_input")
+        if st.button("Valider scan"):
+            try:
+                prod, qty = [x.strip() for x in scan.split(",",1)]
+                assert prod in recipes
+                st.session_state.product = prod
+                st.session_state.quantity = float(qty)
+                st.session_state.start_time = datetime.now()
+                st.session_state.total_pause = timedelta()
+                st.success("Début production capturé.")
+            except AssertionError:
+                st.error("Produit non reconnu.")
+            except:
+                st.error("Format invalide.")
     st.stop()
 
 # Affichage début production
 st.markdown(f"**Début prod :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
 
-# --- 3. Production & pause ---
+# --- 4. Production & pause ---
 qty = st.session_state.quantity
 rec = recipes[st.session_state.product]
 st.subheader("Recette calculée")
@@ -238,7 +238,7 @@ if st.session_state.prod_end_time is None:
         st.success("Fin production capturée.")
     st.stop()
 
-# --- 4. Assurance Qualité & export ---
+# --- 5. Assurance Qualité & export (bouton Fin QA) ---
 st.markdown(f"**Fin prod / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
 tests = quality_tests.get(st.session_state.product,[])
 for t in tests:
@@ -247,26 +247,25 @@ for t in tests:
 if st.button("Fin QA"):
     st.session_state.qa_end_time = datetime.now()
     active = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
-    rec_record = {**{
+    record = {
         'Opérateur':st.session_state.user,
         'Lieu':st.session_state.location,
         'Produit':st.session_state.product,
         'Quantité':st.session_state.quantity,
         'Début prod':st.session_state.start_time,
         'Fin prod':st.session_state.prod_end_time,
-        'Pause':st.session_state.total_pause,
+        'Pause totale':st.session_state.total_pause,
         'Fin QA':st.session_state.qa_end_time,
         'Durée active':active
-    }}
-    rec_record.update({ingr:st.session_state[f"real_{ingr}"] for ingr in rec})
-    rec_record.update({f"Test {t}":st.session_state[f"test_{t}"] for t in tests})
-    dfnew = pd.DataFrame([rec_record])
+    }
+    record.update({ingr:st.session_state[f"real_{ingr}"] for ingr in rec})
+    record.update({f"Test {t}":st.session_state[f"test_{t}"] for t in tests})
+    dfnew = pd.DataFrame([record])
     old = pd.read_excel(excel_path) if os.path.exists(excel_path) else pd.DataFrame()
     pd.concat([old,dfnew],ignore_index=True).to_excel(excel_path,index=False)
-    st.success("Données exportées. Nouveau cycle.")
-    # Reset cycle
+    st.success("Données exportées. Nouveau cycle." )
+    # Reset cycle (sans logout)
     for k in ['start_time','prod_end_time','qa_end_time','product','quantity','pause_start','total_pause']:
         st.session_state[k]=None
     st.stop()
-
 
