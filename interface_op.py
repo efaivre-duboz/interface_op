@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
+# Configuration du fichier Excel
 # Chemin OneDrive local
 onedrive_folder = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production"
 # Si ce dossier existe localement, on y enregistre; sinon, on utilise le répertoire courant
@@ -12,6 +13,13 @@ else:
     excel_dir = os.getcwd()
 os.makedirs(excel_dir, exist_ok=True)
 excel_path = os.path.join(excel_dir, "historique_production.xlsx")
+
+# Utilisateurs
+# Dictionnaire username: password
+users = {
+    "OP1": "123",
+    # Ajouter d'autres utilisateurs ici
+}
 
 recipes = {
     "BLC-310 V2": {
@@ -148,36 +156,60 @@ quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.
 # --- Initialisation du session_state ---
 state_vars = [
     'stage',  # 0=login,1=lieu,2=scan,3=prod,4=QA
+    'login_error','scan_error',
     'user','location','product','quantity',
     'start_time','prod_end_time','qa_end_time','pause_start','total_pause'
 ]
-for k in state_vars:
-    if k not in st.session_state:
-        st.session_state[k] = 0 if k == 'stage' else None
+for var in state_vars:
+    if var not in st.session_state:
+        st.session_state[var] = (0 if var == 'stage' else None)
 
 st.title("Production & Assurance Qualité")
 
+# Supprimer FutureWarning concat
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 # --- Callbacks ---
 def login():
-    st.session_state.user = st.session_state.login_user
-    st.session_state.stage = 1
+    username = st.session_state.login_user.strip()
+    pwd = st.session_state.login_pwd.strip()
+    if username in users and users[username] == pwd:
+        st.session_state.user = username
+        st.session_state.stage = 1
+        st.session_state.login_error = None
+    else:
+        st.session_state.login_error = "Nom d'utilisateur ou mot de passe incorrect."
 
 def set_location():
     st.session_state.location = st.session_state.select_location
     st.session_state.stage = 2
 
 def logout():
-    for k in state_vars:
-        st.session_state[k] = 0 if k == 'stage' else None
+    for v in state_vars:
+        st.session_state[v] = (0 if v == 'stage' else None)
 
 def handle_scan():
-    parts = st.session_state.scan_input.split(',', 1)
+    value = st.session_state.scan_input
+    parts = value.split(',', 1)
+    if len(parts) != 2:
+        st.session_state.scan_error = "Format invalide. Utilisez 'Produit,Quantité'."
+        return
     prod, qty = parts[0].strip(), parts[1].strip()
+    if prod not in recipes:
+        st.session_state.scan_error = f"Produit '{prod}' non reconnu."
+        return
+    try:
+        qty_f = float(qty)
+    except ValueError:
+        st.session_state.scan_error = "Quantité doit être un nombre."
+        return
+    # success
     st.session_state.product = prod
-    st.session_state.quantity = float(qty)
+    st.session_state.quantity = qty_f
     st.session_state.start_time = datetime.now()
     st.session_state.total_pause = timedelta()
     st.session_state.stage = 3
+    st.session_state.scan_error = None
 
 def start_pause():
     st.session_state.pause_start = datetime.now()
@@ -205,12 +237,15 @@ def finalize():
         'Fin QA': st.session_state.qa_end_time,
         'Durée active': active_dur
     }
-    for ingr, (r, u) in recipes[st.session_state.product].items():
+    # Ingrédients
+    for ingr,(r,u) in recipes[st.session_state.product].items():
         record[f"{ingr} ({u})"] = st.session_state.get(f"real_{ingr}")
+    # Tests QA
     for t in quality_tests.get(st.session_state.product, []):
         record[f"Test {t}"] = st.session_state.get(f"test_{t}")
     df_new = pd.DataFrame([record])
-    if os.path.exists(excel_path):
+    # concat si existant
+    if os.path.exists(excel_path) and os.path.getsize(excel_path) > 0:
         try:
             df_old = pd.read_excel(excel_path)
             df_all = pd.concat([df_old, df_new], ignore_index=True)
@@ -219,23 +254,27 @@ def finalize():
     else:
         df_all = df_new
     df_all.to_excel(excel_path, index=False)
-    # reset for new cycle
-    for var in ['product','quantity','start_time','prod_end_time','qa_end_time','pause_start','total_pause']:
-        st.session_state[var] = None
+    st.success(f"Données enregistrées dans : {excel_path}")
+    # reset cycle
+    for v in ['product','quantity','start_time','prod_end_time','qa_end_time','pause_start','total_pause','scan_error']:
+        st.session_state[v] = None
     st.session_state.stage = 2
 
-# --- UI by stage ---
+# --- UI selon l'étape ---
 if st.session_state.stage == 0:
     st.subheader("Connexion opérateur")
     st.text_input("Nom d'utilisateur", key="login_user")
     st.text_input("Mot de passe", type="password", key="login_pwd")
     st.button("Se connecter", on_click=login)
+    if st.session_state.login_error:
+        st.error(st.session_state.login_error)
+
 elif st.session_state.stage == 1:
     st.subheader("Sélection du lieu de production")
     st.selectbox("Lieu", ["Québec","Saint-Marc"], key="select_location")
     st.button("Valider lieu", on_click=set_location)
+
 elif st.session_state.stage == 2:
-    # Logout and scan
     col1, col2 = st.columns([3,1])
     with col2:
         st.button("Déconnexion", on_click=logout)
@@ -243,22 +282,29 @@ elif st.session_state.stage == 2:
         st.subheader("Scan d'initialisation")
         st.text_input("Produit,Quantité (ex: BLC-310 V2,10)", key="scan_input")
         st.button("Valider scan", on_click=handle_scan)
+        if st.session_state.scan_error:
+            st.error(st.session_state.scan_error)
+
 elif st.session_state.stage == 3:
-    st.markdown(f"**Début prod :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
-    qty = st.session_state.quantity
+    st.markdown(f"**Début production :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
     rec = recipes[st.session_state.product]
     st.subheader("Recette calculée")
-    df_req = pd.DataFrame([{ 'Ingrédient': i, 'Qté demandée': round(r*qty,3), 'Unité': u }
-                            for i,(r,u) in rec.items()]).set_index('Ingrédient')
+    df_req = pd.DataFrame([
+        {'Ingrédient': i, 'Qté demandée': round(r*st.session_state.quantity,3), 'Unité': u}
+        for i,(r,u) in rec.items()
+    ]).set_index('Ingrédient')
     st.table(df_req)
     st.subheader("Quantités réelles")
     for ingr,(r,u) in rec.items():
-        st.number_input(f"{ingr} ({u})", value=st.session_state.get(f"real_{ingr}", round(r*qty,3)), key=f"real_{ingr}")
+        st.number_input(f"{ingr} ({u})",
+                         value=st.session_state.get(f"real_{ingr}", round(r*st.session_state.quantity,3)),
+                         key=f"real_{ingr}")
     st.button("Pause", on_click=start_pause)
     if st.session_state.pause_start:
         st.markdown(f"**En pause depuis :** {st.session_state.pause_start:%H:%M:%S}")
         st.button("Reprendre", on_click=resume_prod)
     st.button("Fin production", on_click=end_production)
+
 elif st.session_state.stage == 4:
     st.markdown(f"**Fin prod / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
     for t in quality_tests.get(st.session_state.product, []):
