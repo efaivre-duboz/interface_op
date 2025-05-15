@@ -139,7 +139,7 @@ recipes = {
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
 st.title("Livre de recette")
-qua
+
 product = st.selectbox("Choisir un produit à produire :", list(recipes.keys()))
 quantity = st.number_input("Quantité à produire (Litre de produit fini) :", min_value=1.0, step=1.0)
 
