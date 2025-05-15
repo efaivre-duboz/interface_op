@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 import os
+import warnings
 
 # Configuration du fichier Excel
 # Chemin OneDrive local
@@ -17,9 +18,14 @@ excel_path = os.path.join(excel_dir, "historique_production.xlsx")
 # Utilisateurs
 # Dictionnaire username: password
 users = {
-    "OP1": "123",
+    {"OP1": "123",
+    # Ajouter d'autres utilisateurs ici
+},{
+    "ADMIN": "PASS",
     # Ajouter d'autres utilisateurs ici
 }
+}
+
 
 recipes = {
     "BLC-310 V2": {
