@@ -3,9 +3,16 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 
-   #Emplacement du fichier Excel sur OneDrive#
-excel_path = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production/historique_production.xlsx"
-os.makedirs(os.path.dirname(excel_path), exist_ok=True)
+# Chemin OneDrive local
+onedrive_folder = r"C:/Users/efaivre-duboz/OneDrive - SG Énergie/Production"
+# Si ce dossier existe localement, on y enregistre; sinon, on utilise le répertoire courant
+if os.path.isdir(onedrive_folder):
+    excel_dir = onedrive_folder
+else:
+    excel_dir = os.getcwd()
+os.makedirs(excel_dir, exist_ok=True)
+excel_path = os.path.join(excel_dir, "historique_production.xlsx")
+
 recipes = {
     "BLC-310 V2": {
         "Base organique pure": (0.98, "L"),
