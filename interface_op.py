@@ -161,7 +161,7 @@ if st.session_state.stage == 0:
         if user == "OP1" and pwd == "123":
             st.session_state.user = user
             st.session_state.stage = 1
-            st.success("Connecté en tant que OP1.")
+            st.success
         else:
             st.error("Identifiants incorrects.")
     st.stop()
