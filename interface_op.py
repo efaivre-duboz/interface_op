@@ -139,66 +139,49 @@ recipes = {
 quality_tests = {key: ["Couleur", "Odeur", "pH", "Densité"] for key in recipes.keys()}
 
 # --- Initialisation du session_state ---
-state_vars = [
-    'stage',        # 0: login, 1: lieu, 2: scan, 3: production, 4: QA
-    'user', 'location',
-    'start_time', 'prod_end_time', 'qa_end_time',
-    'pause_start', 'total_pause',
-    'product', 'quantity'
-]
-for key in state_vars:
+if 'stage' not in st.session_state:
+    st.session_state.stage = 0  # 0: login, 1: lieu, 2: scan, 3: prod, 4: QA
+for key in ['user','location','start_time','prod_end_time','qa_end_time','pause_start','total_pause','product','quantity']:
     if key not in st.session_state:
-        st.session_state[key] = 0 if key == 'stage' else None
+        st.session_state[key] = None
 
+# Callback functions
+def to_stage(next_stage):
+    st.session_state.stage = next_stage
+    # clear potential old messages
+
+# UI
 st.title("Production & Assurance Qualité")
 
-# --- 1. Connexion ---
+# Stage 0: Login
 if st.session_state.stage == 0:
     st.subheader("Connexion opérateur")
     user = st.text_input("Nom d'utilisateur", key="login_user")
     pwd  = st.text_input("Mot de passe", type="password", key="login_pwd")
-    if st.button("Se connecter"):
-        if user == "OP1" and pwd == "123":
-            st.session_state.user = user
-            st.session_state.stage = 1
-        else:
-            st.error("Identifiants incorrects.")
-    st.stop()
+    if st.button("Se connecter", on_click=lambda: st.session_state.update({'user': user, 'stage': 1})):
+        pass
 
-# --- 2. Sélection du lieu ---
-if st.session_state.stage == 1:
+# Stage 1: Choix du lieu
+elif st.session_state.stage == 1:
     st.subheader("Sélection du lieu de production")
     lieu = st.selectbox("Lieu", ["Québec", "Saint-Marc"], key="select_location")
-    if st.button("Valider lieu"):
-        st.session_state.location = lieu
-        st.session_state.stage = 2
-        st.success(f"Lieu défini : {lieu}.")
-    st.stop()
+    if st.button("Valider lieu", on_click=lambda: st.session_state.update({'location': lieu, 'stage': 2})):
+        pass
 
-# Affichage informations globales
-st.markdown(f"**Opérateur :** {st.session_state.user}")
-st.markdown(f"**Lieu :** {st.session_state.location}")
-
-# --- 3. Scan & début production ---
-if st.session_state.stage == 2:
+# Stage 2: Scan + Logout
+elif st.session_state.stage == 2:
     col1, col2 = st.columns([3,1])
     with col2:
-        if st.button("Déconnexion"):
-            for k in state_vars:
-                st.session_state[k] = 0 if k == 'stage' else None
-            st.stop()
+        if st.button("Déconnexion", on_click=lambda: st.session_state.clear()):
+            pass
     with col1:
         st.subheader("Scan d'initialisation")
         scan = st.text_input("Produit, Quantité (ex: BLC-310 V2,10)", key="scan_input")
-        if st.button("Valider scan"):
-            parts = scan.split(",",1)
-            if len(parts) != 2:
-                st.error("Format invalide. Utilisez 'Produit,Quantité'.")
-            else:
+        def handle_scan():
+            parts = scan.split(',',1)
+            if len(parts) == 2:
                 prod, qty = parts[0].strip(), parts[1].strip()
-                if prod not in recipes:
-                    st.error(f"Produit '{prod}' non reconnu.")
-                else:
+                if prod in recipes:
                     try:
                         qty_f = float(qty)
                         st.session_state.product = prod
@@ -206,69 +189,58 @@ if st.session_state.stage == 2:
                         st.session_state.start_time = datetime.now()
                         st.session_state.total_pause = timedelta()
                         st.session_state.stage = 3
-                        st.success("Début production enregistré.")
                     except ValueError:
                         st.error("Quantité doit être un nombre.")
-    st.stop()
+                else:
+                    st.error(f"Produit '{prod}' non reconnu.")
+            else:
+                st.error("Format invalide. Utilisez 'Produit,Quantité'.")
+        if st.button("Valider scan", on_click=handle_scan):
+            pass
+    # Show operator and location above or in sidebar
+    st.sidebar.markdown(f"**Opérateur :** {st.session_state.user}")
+    st.sidebar.markdown(f"**Lieu :** {st.session_state.location}")
 
-# --- 4. Production & pause ---
-if st.session_state.stage == 3:
+# Stage 3: Production & Pause
+elif st.session_state.stage == 3:
     st.markdown(f"**Début prod :** {st.session_state.start_time:%Y-%m-%d %H:%M:%S}")
     qty = st.session_state.quantity
     rec = recipes[st.session_state.product]
-
     st.subheader("Recette calculée")
-    df_req = pd.DataFrame([
-        {'Ingrédient': i, 'Qté demandée': round(ratio*qty,3), 'Unité': unit}
-        for i,(ratio,unit) in rec.items()
-    ]).set_index('Ingrédient')
+    df_req = pd.DataFrame([{'Ingrédient': i, 'Qté demandée': round(r*qty,3), 'Unité': u} for i,(r,u) in rec.items()]).set_index('Ingrédient')
     st.table(df_req)
-
     st.subheader("Quantités réelles")
-    for ingr,(ratio,unit) in rec.items():
+    for ingr,(r,u) in rec.items():
         key = f"real_{ingr}"
-        default = round(ratio*qty,3)
-        st.number_input(
-            label=f"{ingr} ({unit})", 
-            value=st.session_state.get(key, default),
-            step=0.001,
-            key=key
-        )
-
-    # Pause / Reprendre
+        default = round(r*qty,3)
+        st.number_input(f"{ingr} ({u})", value=st.session_state.get(key,default), step=0.001, key=key)
+    # Pause/Resume with callbacks
     if st.session_state.pause_start is None:
-        if st.button("Pause"):
-            st.session_state.pause_start = datetime.now()
-            st.success("Production en pause.")
+        if st.button("Pause", on_click=lambda: st.session_state.update({'pause_start': datetime.now()})):
+            pass
     else:
         st.markdown(f"**En pause depuis :** {st.session_state.pause_start:%H:%M:%S}")
-        if st.button("Reprendre"):
+        def resume():
             now = datetime.now()
             st.session_state.total_pause += now - st.session_state.pause_start
             st.session_state.pause_start = None
-            st.success("Production reprise.")
-
+        if st.button("Reprendre", on_click=resume):
+            pass
     # Fin production
-    if st.button("Fin production"):
-        st.session_state.prod_end_time = datetime.now()
-        st.session_state.stage = 4
-        st.success("Fin production enregistrée.")
-    st.stop()
+    if st.button("Fin production", on_click=lambda: st.session_state.update({'prod_end_time': datetime.now(), 'stage': 4})):
+        pass
 
-# --- 5. Assurance Qualité & export ---
-if st.session_state.stage == 4:
+# Stage 4: QA & Export
+elif st.session_state.stage == 4:
     st.markdown(f"**Fin prod / Début QA :** {st.session_state.prod_end_time:%Y-%m-%d %H:%M:%S}")
     tests = quality_tests.get(st.session_state.product, [])
     for t in tests:
         st.radio(label=t, options=["Conforme","Non conforme"], key=f"test_{t}")
-
-    if st.button("Fin QA"):
+    def finalize():
         st.session_state.qa_end_time = datetime.now()
-        # Calcul durée active hors pause
-        active_dur = (st.session_state.qa_end_time - 
-                      st.session_state.start_time - 
-                      st.session_state.total_pause)
-        # Construction de l'enregistrement
+        # calculate active duration
+        active_dur = st.session_state.qa_end_time - st.session_state.start_time - st.session_state.total_pause
+        # build record
         record = {
             'Opérateur': st.session_state.user,
             'Lieu': st.session_state.location,
@@ -280,14 +252,11 @@ if st.session_state.stage == 4:
             'Fin QA': st.session_state.qa_end_time,
             'Durée active': active_dur
         }
-        # Ingrédients réels
-        for ingr in recipes[st.session_state.product]:
+        for ingr in rec:
             unit = recipes[st.session_state.product][ingr][1]
             record[f"{ingr} ({unit})"] = st.session_state.get(f"real_{ingr}")
-        # Résultats QA
         for t in tests:
             record[f"Test {t}"] = st.session_state.get(f"test_{t}")
-
         df_new = pd.DataFrame([record])
         if os.path.exists(excel_path):
             try:
@@ -298,9 +267,9 @@ if st.session_state.stage == 4:
         else:
             df_all = df_new
         df_all.to_excel(excel_path, index=False)
-        st.success("Données exportées. Retour au scan.")
-        # Reset cycle (stage = 2 pour scan)
+        # Reset for new cycle
         for key in ['start_time','prod_end_time','qa_end_time','pause_start','total_pause','product','quantity']:
             st.session_state[key] = None
         st.session_state.stage = 2
-        st.stop()
+    if st.button("Fin QA", on_click=finalize):
+        st.success("Données exportées. Nouveau cycle." )
